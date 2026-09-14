@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Gateway Demo - APIM fronting the Azure AI stack</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>
+        <h1>Fronting the Azure AI Stack</h1>
+        <p class="sub">One endpoint, one deployment, one key &mdash; the code is the same either way</p>
+      </div>
+    </div>
+
+    <!-- Where this instance is pointed, and what that endpoint turns out to be.
+         The mode is derived from the URL, never configured, so it cannot be wrong. -->
+    <div class="conn-chip" id="connChip" title="Connection">
+      <span class="conn-detail">
+        <span class="conn-host" id="connHost">connecting&hellip;</span>
+        <span class="conn-model" id="connModel"></span>
+      </span>
+      <span class="mode-badge" id="modeBadge">&hellip;</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ── Left: documents ─────────────────────────────────────────── -->
+    <section class="panel docs" aria-labelledby="docsHead">
+      <h2 id="docsHead">Documents</h2>
+      <p class="hint">PDF / image &rarr; Document Intelligence &rarr; chunk &rarr; embed &rarr; in-memory index.</p>
+
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" multiple
+               accept=".pdf,.png,.jpg,.jpeg,.bmp,.tiff,.heif,.docx,.xlsx,.pptx,.html,.txt,.md,.json,.csv" />
+        <span class="dz-title">Drop files or click to upload</span>
+        <span class="dz-sub">pdf &middot; png &middot; jpg &middot; docx &middot; xlsx &middot; pptx &middot; txt &middot; md</span>
+      </label>
+
+      <div id="uploadStatus" class="upload-status" hidden></div>
+
+      <ul class="doclist" id="docList"></ul>
+
+      <div class="index-row">
+        <span class="index-stats" id="indexStats"></span>
+        <button type="button" id="clearIndex" class="link" hidden>Clear all</button>
+      </div>
+
+      <label class="toggle">
+        <input type="checkbox" id="useRag" checked />
+        <span>Ground answers in uploaded documents (RAG)</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="showRetrieval" />
+        <span>Show retrieved chunks in the inspector</span>
+      </label>
+    </section>
+
+    <!-- ── Middle: chat ────────────────────────────────────────────── -->
+    <section class="panel chat" aria-labelledby="chatHead">
+      <h2 id="chatHead" class="sr-only">Chat</h2>
+      <div class="messages" id="messages"></div>
+
+      <div class="composer">
+        <div id="attachPreview" class="attach-preview" hidden>
+          <img id="attachThumb" alt="Attached image preview" />
+          <button type="button" id="attachRemove" class="x" aria-label="Remove attachment">&times;</button>
+        </div>
+        <div class="composer-row">
+          <label class="icon-btn" title="Attach an image for the vision model (screened by Content Safety)">
+            <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16l4.5-5 3.5 4 3-3.5L20 16M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>
+            <span class="sr-only">Attach image</span>
+          </label>
+          <textarea id="prompt" rows="1" placeholder="Ask something, or ask about an uploaded document..."></textarea>
+          <button id="send" class="send">Send</button>
+        </div>
+        <div class="composer-foot">
+          <span class="kbd-hint">Enter to send &middot; Shift+Enter for newline</span>
+          <button type="button" id="clearChat" class="link">Clear</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Right: inspector ────────────────────────────────────────── -->
+    <aside class="panel inspector" aria-labelledby="inspHead">
+      <h2 id="inspHead">Gateway inspector</h2>
+      <p class="hint">What the last turn actually did, and how it connected.</p>
+      <div id="inspector" class="insp-empty">Send a message to see the connection, guardrail verdicts, token usage and latency.</div>
+    </aside>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

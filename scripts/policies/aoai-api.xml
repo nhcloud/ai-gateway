@@ -1,0 +1,92 @@
+<!--
+  API-scope policy for the Azure OpenAI API fronted by APIM.
+
+  Named values used (created by 02-configure-apim.ps1):
+    {{aoai-key}}  - the provider key, secret, never leaves the gateway
+
+  Everything here runs AFTER operation matching. A policy can never rescue a path
+  that matched no operation - that is why an undefined path 404s before this file
+  is ever evaluated.
+-->
+<policies>
+  <inbound>
+    <base />
+
+    <!-- Browsers send a preflight OPTIONS before the real POST. This answers it at
+         the gateway, before the backend. curl and the Test blade will not reveal a
+         missing cors policy - only a real browser will.
+         Replace the wildcard origin with your app origins in production. -->
+    <cors allow-credentials="false">
+      <allowed-origins>
+        <origin>*</origin>
+      </allowed-origins>
+      <allowed-methods preflight-result-max-age="300">
+        <method>OPTIONS</method>
+        <method>GET</method>
+        <method>POST</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>api-key</header>
+        <header>Authorization</header>
+        <header>Content-Type</header>
+        <header>x-correlation-id</header>
+      </allowed-headers>
+      <expose-headers>
+        <header>x-ratelimit-remaining-tokens</header>
+        <header>x-ratelimit-consumed-tokens</header>
+        <header>x-correlation-id</header>
+      </expose-headers>
+    </cors>
+
+    <!-- The client authenticated to the gateway with its own subscription key.
+         Here the gateway swaps in the provider credential, which the client never sees.
+         Prefer managed identity in production:
+         <authentication-managed-identity resource="https://cognitiveservices.azure.com" /> -->
+    <set-header name="api-key" exists-action="override">
+      <value>{{aoai-key}}</value>
+    </set-header>
+
+    <!-- Echo the caller's correlation id back so a gateway log line can be tied to
+         an app trace. Never put secrets or prompt content in a correlation id. -->
+    <set-variable name="correlationId"
+                  value='@(context.Request.Headers.GetValueOrDefault("x-correlation-id", context.RequestId.ToString()))' />
+
+    <!-- Caps spend before the backend is called: prompt tokens are estimated up front,
+         so a request over budget costs nothing at the provider. -->
+    <llm-token-limit counter-key="@(context.Subscription?.Id ?? context.Request.IpAddress)"
+                     tokens-per-minute="10000"
+                     estimate-prompt-tokens="true"
+                     retry-after-header-name="Retry-After"
+                     remaining-tokens-header-name="x-ratelimit-remaining-tokens"
+                     tokens-consumed-header-name="x-ratelimit-consumed-tokens" />
+
+    <!-- Per-consumer token metrics to Azure Monitor. -->
+    <llm-emit-token-metric namespace="ai-gateway-demo">
+      <dimension name="Subscription" value='@(context.Subscription?.Name ?? "anonymous")' />
+      <dimension name="API" value="@(context.Api.Name)" />
+      <dimension name="CorrelationId" value='@((string)context.Variables["correlationId"])' />
+    </llm-emit-token-metric>
+  </inbound>
+
+  <backend>
+    <base />
+  </backend>
+
+  <outbound>
+    <base />
+    <set-header name="x-correlation-id" exists-action="override">
+      <value>@((string)context.Variables["correlationId"])</value>
+    </set-header>
+    <!-- Makes the routing visible in the demo: proof the call went through the gateway. -->
+    <set-header name="x-gateway" exists-action="override">
+      <value>@(context.Deployment.ServiceName)</value>
+    </set-header>
+  </outbound>
+
+  <on-error>
+    <base />
+    <set-header name="x-correlation-id" exists-action="override">
+      <value>@((string)context.Variables.GetValueOrDefault("correlationId", "none"))</value>
+    </set-header>
+  </on-error>
+</policies>

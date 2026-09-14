@@ -1,0 +1,248 @@
+/* AI Gateway demo - shared stylesheet (.NET Razor app and Python FastAPI app) */
+:root {
+  --bg: #f6f5f9;
+  --panel: #ffffff;
+  --ink: #1c1430;
+  --muted: #6b6580;
+  --line: #e6e3ee;
+  --brand: #2d0b45;
+  --accent: #7c2fd4;
+  --accent-soft: #f2eafc;
+  --ok: #157f54;
+  --ok-soft: #e6f5ee;
+  --warn: #9a6400;
+  --warn-soft: #fdf3e0;
+  --bad: #b3261e;
+  --bad-soft: #fdecea;
+  --radius: 12px;
+  --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141020; --panel: #1c1730; --ink: #ece9f5; --muted: #a49cbd;
+    --line: #2e2745; --accent-soft: #2a1b42; --ok-soft: #16302a; --warn-soft: #33270f;
+    --bad-soft: #3a1d1c; --ok: #4bd39b; --warn: #e0a94a; --bad: #ff8b80;
+  }
+}
+* { box-sizing: border-box; }
+/* An author `display` rule beats the user-agent [hidden] rule, so elements like
+   .attach-preview (display: inline-block) stayed visible when hidden was set.
+   This keeps the attribute authoritative wherever it is used. */
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+h1, h2, h3 { margin: 0; font-weight: 650; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* top bar */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  flex-wrap: wrap;
+  padding: 14px 22px; background: var(--brand); color: #fff;
+  border-bottom: 3px solid var(--accent);
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand .dot {
+  width: 26px; height: 26px; border-radius: 8px; flex: none;
+  background: linear-gradient(135deg, var(--accent), #c58bf5);
+}
+.topbar h1 { font-size: 17px; letter-spacing: .2px; }
+.topbar .sub { margin: 2px 0 0; font-size: 12.5px; color: #cbb8e4; }
+
+.mode-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; cursor: default;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  background: rgba(255,255,255,.16); color: #fff;
+}
+.mode-badge.apim { background: #c58bf5; color: #2d0b45; }
+.mode-badge.aigateway { background: #7ce0c3; color: #06372a; }
+.mode-badge.direct { background: #f0b429; color: #3d2a00; }
+.mode-badge.custom { background: #9aa4b2; color: #10151f; }
+.mode-badge.unconfigured { background: #b3261e; color: #fff; }
+
+.conn-chip {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(0,0,0,.25); padding: 7px 12px; border-radius: 10px;
+}
+.conn-detail { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+.conn-detail { align-items: flex-end; text-align: right; }
+.conn-host {
+  font-family: var(--mono); font-size: 12px; color: #fff;
+  max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conn-model { font-size: 11px; color: #cbb8e4; }
+
+/* layout */
+.layout {
+  display: grid; gap: 16px; padding: 16px;
+  grid-template-columns: 300px minmax(0, 1fr) 340px;
+  height: calc(100vh - 71px);
+}
+@media (max-width: 1180px) {
+  .layout { grid-template-columns: 1fr; height: auto; }
+  .chat .messages { min-height: 50vh; }
+}
+.panel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; display: flex; flex-direction: column; min-height: 0; overflow: auto;
+}
+.panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+.hint { margin: 6px 0 12px; font-size: 12.5px; color: var(--muted); }
+
+/* documents */
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center;
+  padding: 18px 12px; border: 1.5px dashed var(--line); border-radius: 10px;
+  cursor: pointer; transition: .15s; background: var(--bg);
+}
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone input { display: none; }
+.dz-title { font-weight: 600; font-size: 13.5px; }
+.dz-sub { font-size: 11.5px; color: var(--muted); }
+
+.upload-status { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.upload-status .spin {
+  display: inline-block; width: 11px; height: 11px; margin-right: 6px; vertical-align: -1px;
+  border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.doclist { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.doclist li {
+  border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; font-size: 13px;
+  display: flex; gap: 8px; align-items: flex-start;
+}
+.doclist .name { font-weight: 600; word-break: break-word; }
+.doclist .meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.doclist .grow { flex: 1; min-width: 0; }
+.doclist button.x {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 17px; line-height: 1; padding: 0 2px;
+}
+.doclist button.x:hover { color: var(--bad); }
+
+.index-row {
+  margin-top: 12px; display: flex; align-items: baseline;
+  justify-content: space-between; gap: 8px;
+}
+.index-stats { font-size: 12px; color: var(--muted); }
+.index-row .link { font-size: 11.5px; white-space: nowrap; }
+
+/* Still on screen - the transcript is the demo - but no longer sent to the model. */
+.msg.forgotten { opacity: .45; }
+.msg.forgotten .bubble { border-style: dashed; }
+.msg.forgotten .bubble::after {
+  content: "no longer sent to the model";
+  display: block; margin-top: 6px; font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+/* The user bubble is solid accent, so the muted grey vanishes on it. */
+.msg.user.forgotten .bubble::after { color: rgba(255, 255, 255, .9); }
+.toggle { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; font-size: 13px; cursor: pointer; }
+.toggle input { margin-top: 3px; accent-color: var(--accent); }
+
+/* chat */
+.chat { padding: 0; }
+.messages { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.msg { display: flex; gap: 10px; max-width: 88%; }
+.msg.user { align-self: flex-end; flex-direction: row-reverse; }
+.avatar {
+  width: 28px; height: 28px; border-radius: 8px; flex: none; display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; background: var(--accent-soft); color: var(--accent);
+}
+.msg.user .avatar { background: var(--brand); color: #fff; }
+.bubble {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px;
+  white-space: pre-wrap; word-wrap: break-word; min-width: 0;
+}
+.msg.user .bubble { background: var(--accent); border-color: var(--accent); color: #fff; }
+.msg.blocked .bubble { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+.bubble img.att { max-width: 220px; border-radius: 8px; margin-bottom: 8px; display: block; }
+.bubble .cites { margin-top: 8px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 6px; }
+.msg .stamp { font-size: 11px; color: var(--muted); margin-top: 5px; }
+.typing span {
+  display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%;
+  background: var(--muted); animation: blink 1.2s infinite;
+}
+.typing span:nth-child(2) { animation-delay: .2s; }
+.typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+
+.composer { border-top: 1px solid var(--line); padding: 12px 14px; }
+.composer-row { display: flex; gap: 8px; align-items: flex-end; }
+.composer textarea {
+  flex: 1; resize: none; max-height: 160px; padding: 10px 12px; font: inherit;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink);
+}
+.composer textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.icon-btn {
+  width: 38px; height: 38px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg); flex: none;
+}
+.icon-btn:hover { border-color: var(--accent); }
+.icon-btn svg { width: 19px; height: 19px; fill: none; stroke: var(--muted); stroke-width: 1.7; }
+.send {
+  border: 0; background: var(--accent); color: #fff; font: inherit; font-weight: 600;
+  padding: 0 20px; height: 38px; border-radius: 10px; cursor: pointer; flex: none;
+}
+.send:hover:not(:disabled) { background: #6a25b8; }
+.send:disabled { opacity: .5; cursor: not-allowed; }
+.composer-foot { display: flex; justify-content: space-between; margin-top: 7px; font-size: 11.5px; color: var(--muted); }
+.link { border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; text-decoration: underline; }
+.link:hover { color: var(--accent); }
+.attach-preview { position: relative; display: inline-block; margin-bottom: 8px; }
+.attach-preview img { max-height: 74px; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.attach-preview .x {
+  position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; border-radius: 50%;
+  border: 0; background: var(--bad); color: #fff; cursor: pointer; line-height: 1; font-size: 14px;
+}
+
+/* inspector */
+.insp-empty { font-size: 13px; color: var(--muted); }
+.insp-section { border-top: 1px solid var(--line); padding: 12px 0; }
+.insp-section:first-child { border-top: 0; padding-top: 0; }
+.insp-section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 8px; }
+.kv { display: grid; grid-template-columns: 92px 1fr; gap: 4px 10px; font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; word-break: break-all; font-family: var(--mono); font-size: 11.5px; }
+.pill {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; font-family: inherit;
+}
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.info { background: var(--accent-soft); color: var(--accent); }
+.sev-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin-bottom: 5px; }
+.sev-row .cat { width: 74px; color: var(--muted); }
+.sev-bar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.sev-bar i { display: block; height: 100%; border-radius: 3px; background: var(--ok); }
+.sev-bar i.s2 { background: #d9a300; }
+.sev-bar i.s4 { background: #e07a1f; }
+.sev-bar i.s6 { background: var(--bad); }
+.sev-row .val { width: 14px; text-align: right; font-family: var(--mono); font-size: 11.5px; }
+.chunk {
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 7px;
+  font-size: 11.5px; background: var(--bg);
+}
+.chunk .src { font-weight: 600; display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.chunk .txt { color: var(--muted); max-height: 74px; overflow: hidden; }
+.note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+
+/* the turn header - what makes "unchanged" distinguishable from "not updated" */
+.turn-head h3 { color: var(--accent); }
+.turn-prompt {
+  font-size: 12.5px; margin: 2px 0 7px; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.insp-busy { opacity: .62; }
+
+.pipeline { margin: 0; padding-left: 18px; font-size: 12.5px; }
+.pipeline li { margin-bottom: 3px; }
+.pipeline li.skipped { color: var(--muted); text-decoration: line-through; }

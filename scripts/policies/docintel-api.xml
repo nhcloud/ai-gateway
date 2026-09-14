@@ -1,0 +1,75 @@
+<!--
+  API-scope policy for Document Intelligence fronted by APIM.
+
+  Deliberately thin: a wildcard frontend path plus two policies. The wildcard passes
+  path and query through unchanged, so every model and route is covered without
+  defining an operation per endpoint.
+
+  Named values (created by 02-configure-apim.ps1):
+    {{docintel-key}}   - the resource key, secret
+    {{docintel-host}}  - e.g. my-docintel.cognitiveservices.azure.com
+-->
+<policies>
+  <inbound>
+    <base />
+
+    <cors allow-credentials="false">
+      <allowed-origins>
+        <origin>*</origin>
+      </allowed-origins>
+      <allowed-methods preflight-result-max-age="300">
+        <method>OPTIONS</method>
+        <method>GET</method>
+        <method>POST</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>api-key</header>
+        <header>Ocp-Apim-Subscription-Key</header>
+        <header>Content-Type</header>
+        <header>x-correlation-id</header>
+      </allowed-headers>
+      <expose-headers>
+        <header>Operation-Location</header>
+        <header>x-correlation-id</header>
+      </expose-headers>
+    </cors>
+
+    <!-- The client's gateway key is replaced by the resource key. -->
+    <set-header name="Ocp-Apim-Subscription-Key" exists-action="override">
+      <value>{{docintel-key}}</value>
+    </set-header>
+  </inbound>
+
+  <backend>
+    <base />
+  </backend>
+
+  <outbound>
+    <base />
+
+    <!-- A 202 carries an Operation-Location built from the resource's own hostname.
+         A client that follows it verbatim leaves the gateway and gets a 401, because
+         it holds a gateway key rather than the resource key. Rewriting the host keeps
+         the whole analyze-and-poll cycle inside the gateway.
+
+         The choose guard leaves poll responses and errors untouched. Note the use of
+         Replace rather than any string containing a bare '<', which would break the
+         policy XML. -->
+    <choose>
+      <when condition='@(context.Response.Headers.ContainsKey("Operation-Location"))'>
+        <set-header name="Operation-Location" exists-action="override">
+          <value>@{
+            var original = context.Response.Headers.GetValueOrDefault("Operation-Location", "");
+            var resourceOrigin = "https://" + "{{docintel-host}}";
+            var gatewayOrigin = "https://" + context.Request.OriginalUrl.Host + "/" + context.Api.Path;
+            return original.Replace(resourceOrigin, gatewayOrigin);
+          }</value>
+        </set-header>
+      </when>
+    </choose>
+  </outbound>
+
+  <on-error>
+    <base />
+  </on-error>
+</policies>

@@ -1,0 +1,48 @@
+<!--
+  API-scope policy for Azure AI Content Safety fronted by APIM.
+
+  Same thin shape as Document Intelligence: a wildcard path and one header swap, so
+  text:analyze, image:analyze and every other route work without per-operation wiring.
+  This is what lets the demo app show guardrail verdicts "via gateway" rather than
+  holding the Content Safety key itself.
+
+  Named values (created by 02-configure-apim.ps1):
+    {{contentsafety-key}}  - the resource key, secret
+-->
+<policies>
+  <inbound>
+    <base />
+
+    <cors allow-credentials="false">
+      <allowed-origins>
+        <origin>*</origin>
+      </allowed-origins>
+      <allowed-methods preflight-result-max-age="300">
+        <method>OPTIONS</method>
+        <method>POST</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>api-key</header>
+        <header>Ocp-Apim-Subscription-Key</header>
+        <header>Content-Type</header>
+        <header>x-correlation-id</header>
+      </allowed-headers>
+    </cors>
+
+    <set-header name="Ocp-Apim-Subscription-Key" exists-action="override">
+      <value>{{contentsafety-key}}</value>
+    </set-header>
+  </inbound>
+
+  <backend>
+    <base />
+  </backend>
+
+  <outbound>
+    <base />
+  </outbound>
+
+  <on-error>
+    <base />
+  </on-error>
+</policies>

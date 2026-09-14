@@ -1,0 +1,32 @@
+# ── Secrets ──────────────────────────────────────────────────────────
+# 03-set-local-env.ps1 writes .env at the repo root with real keys. Never commit it.
+# The pattern is unanchored, so a stack-local dotnet/.env or python/.env is covered too.
+.env
+scripts/.deploy.json
+
+# The template is tracked - it is the documentation for every setting.
+!.env.example
+
+# ── .NET ─────────────────────────────────────────────────────────────
+bin/
+obj/
+*.user
+
+# NOT tracked: appsettings.Development.json is the natural place to put a local
+# AI_ENDPOINT and AI_KEY, and the app reads it - so treat it as a secret file.
+# Copy appsettings.Development.example.json over it for the development defaults.
+appsettings.Development.json
+!dotnet/AiGatewayDemo/appsettings.Development.example.json
+
+# Tracked: no secrets in it, and it is what puts the app in the Development
+# environment at all - which is also what makes 'dotnet user-secrets' load.
+!dotnet/AiGatewayDemo/Properties/launchSettings.json
+
+# ── Python ───────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+
+# ── Editors ──────────────────────────────────────────────────────────
+.vs/
+.idea/
