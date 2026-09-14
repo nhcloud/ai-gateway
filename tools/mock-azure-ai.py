@@ -2,7 +2,7 @@
 
 Useful for two things:
   * rehearsing the demo on a plane, with no Azure resources and no spend;
-  * proving the .NET and Python apps behave identically (scripts/verify-apps.py).
+  * proving the .NET and Python apps behave identically (tests/verify-apps.py).
 
 It implements just enough of each REST surface for the demo:
   POST /openai/v1/chat/completions   - o1/o3/o4/gpt-5* reject max_tokens and a
@@ -15,7 +15,7 @@ It implements just enough of each REST surface for the demo:
   POST /documentintelligence/documentModels/prebuilt-layout:analyze  -> 202
   GET  /documentintelligence/operations/{id}                          -> succeeded
 
-Run:  python scripts/mock-azure-ai.py [port]
+Run:  python tools/mock-azure-ai.py [port]
 """
 from __future__ import annotations
 

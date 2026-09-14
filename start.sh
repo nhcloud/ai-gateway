@@ -38,15 +38,15 @@ case "$TARGET" in
   verify)
     command -v dotnet >/dev/null 2>&1 || { echo "error: the .NET SDK was not found." >&2; exit 1; }
     dotnet build "$ROOT/dotnet/AiGatewayDemo" --nologo -v q || exit 1
-    python3 "$ROOT/scripts/mock-azure-ai.py" 5290 &
+    python3 "$ROOT/tools/mock-azure-ai.py" 5290 &
     mock_pid=$!
     trap 'kill '"$mock_pid"' 2>/dev/null' EXIT INT TERM
     sleep 2
-    python3 "$ROOT/scripts/verify-apps.py"
+    python3 "$ROOT/tests/verify-apps.py"
     ;;
 
   mock)
-    exec python3 "$ROOT/scripts/mock-azure-ai.py" "${1:-5290}"
+    exec python3 "$ROOT/tools/mock-azure-ai.py" "${1:-5290}"
     ;;
 
   -h|--help|help)

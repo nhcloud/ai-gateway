@@ -63,8 +63,11 @@ python/
   app.py  services/       FastAPI + static/ (its own UI)
 
 scripts/                  Azure only: provision → configure → configure locally → test
+                          PowerShell + az throughout; nothing here runs Python
   policies/               The APIM policy XML, commented
-  mock-azure-ai.py        Offline stand-in for all three Azure services
+tools/
+  mock-azure-ai.py        Offline stand-in for all three Azure services, used by --mock
+tests/
   verify-apps.py          Runs both stacks against the mock and compares them
   test-mode-detection.py  Both stacks must derive the same mode from the same URL
   test-model-params.py    max_tokens vs max_completion_tokens, per model
@@ -130,7 +133,7 @@ are written for the bash 3.2 that macOS ships.
 
 ### Rehearse offline — no Azure, no spend
 
-`--mock` (or no configuration at all) starts `scripts/mock-azure-ai.py`, which imitates
+`--mock` (or no configuration at all) starts `tools/mock-azure-ai.py`, which imitates
 Azure OpenAI, Content Safety and Document Intelligence closely enough to drive the whole
 demo. The words *bomb*, *attack*, *kill* or *weapon* in a prompt trip the guardrail, and
 any upload that is not plain text goes through the full 202-and-poll Document
@@ -221,7 +224,7 @@ Connection block names the part of the URL the decision was made on. To show the
 contrast in a talk, re-run `03-set-local-env.ps1 -Mode direct` and restart; the app
 code is untouched, which is the whole argument.
 
-`scripts/test-mode-detection.py` checks both implementations against that table case
+`tests/test-mode-detection.py` checks both implementations against that table case
 by case, since the logic exists in two languages and would otherwise drift.
 
 ### Request parameters differ by model
@@ -256,7 +259,7 @@ Layer 4 means an unrecognised deployment name costs one wasted round trip and th
 works; layers 1-3 mean it need not cost even that. The inspector's **Request
 parameters** block shows what was sent and which layer decided it.
 
-`scripts/test-model-params.py` covers all four layers in both apps.
+`tests/test-model-params.py` covers all four layers in both apps.
 
 `/openai/v1` is appended automatically if the endpoint does not already end with it, so
 the same value works for a bare resource and for an APIM suffix. The key header for
@@ -337,8 +340,8 @@ Running both means paying for two checks — pick one.
 ## Verifying
 
 ```powershell
-python scripts\mock-azure-ai.py          # terminal 1
-python scripts\verify-apps.py            # terminal 2
+python tools\mock-azure-ai.py            # terminal 1
+python tests\verify-apps.py              # terminal 2
 ```
 
 Starts both apps against the mock and asserts 30 behaviours each — routing, extraction,

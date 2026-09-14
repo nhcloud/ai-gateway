@@ -74,7 +74,7 @@ if "%FORCE_MOCK%"=="1" (
     rem a second that cannot bind.
     python -c "import socket,sys; s=socket.socket(); s.settimeout(0.5); sys.exit(0 if s.connect_ex(('127.0.0.1',%MOCK_PORT%))==0 else 1)" >nul 2>&1
     if errorlevel 1 (
-        start "AI Gateway - mock" /min python "%ROOT%\scripts\mock-azure-ai.py" %MOCK_PORT%
+        start "AI Gateway - mock" /min python "%ROOT%\tools\mock-azure-ai.py" %MOCK_PORT%
         timeout /t 3 /nobreak >nul
     ) else (
         echo   Reusing the mock already listening on :%MOCK_PORT%

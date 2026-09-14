@@ -1,7 +1,7 @@
 """Runs both apps against the mock Azure AI stack and compares their behaviour.
 
-  python scripts/mock-azure-ai.py 5290          # terminal 1
-  python scripts/verify-apps.py                 # terminal 2  (starts both apps itself)
+  python tools/mock-azure-ai.py 5290            # terminal 1
+  python tests/verify-apps.py                   # terminal 2  (starts both apps itself)
 
 Checks that the .NET Razor app and the Python FastAPI app return the same JSON
 shape and the same decisions for: config, upload + Document Intelligence polling,
@@ -31,7 +31,7 @@ ENV = {
     # One connection. Everything points at the mock; in a real deployment only
     # AI_ENDPOINT and AI_KEY would differ, and no code would.
     # The mock is on 127.0.0.1, so both apps must derive "custom" from it - a real
-    # host has to be reachable here. scripts/test-mode-detection.py covers the full
+    # host has to be reachable here. tests/test-mode-detection.py covers the full
     # direct / apim / aigateway table, which needs no reachable server.
     "AI_ENDPOINT": MOCK,
     "AI_KEY": "gateway-subscription-key",

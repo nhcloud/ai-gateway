@@ -10,8 +10,8 @@ The mock reproduces both errors for o1/o3/o4/gpt-5* models, so this exercises th
 whole chain offline: the explicit override, the name heuristic, and the
 correct-and-retry path for a model nobody recognised.
 
-  MOCK_STRICT_MODELS=terra-x python scripts/mock-azure-ai.py 5290   # terminal 1
-  python scripts/test-model-params.py                               # terminal 2
+  MOCK_STRICT_MODELS=terra-x python tools/mock-azure-ai.py 5290     # terminal 1
+  python tests/test-model-params.py                                 # terminal 2
 
 The mock must be started with MOCK_STRICT_MODELS=terra-x: that name is not matched
 by either app's heuristic, so it is the only case that really exercises the

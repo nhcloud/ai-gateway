@@ -103,7 +103,7 @@ start_mock() {
   fi
 
   step "Starting the mock Azure AI stack on :$MOCK_PORT"
-  "$PYTHON" "$ROOT/scripts/mock-azure-ai.py" "$MOCK_PORT" &
+  "$PYTHON" "$ROOT/tools/mock-azure-ai.py" "$MOCK_PORT" &
   MOCK_PID=$!
 
   local attempt=0

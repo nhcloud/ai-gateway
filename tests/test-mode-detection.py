@@ -4,7 +4,7 @@ How you are connected is not configured - it is worked out from AI_ENDPOINT, in 
 places (python/config.py and dotnet/.../GatewayOptions.cs). Duplicated logic drifts,
 so this compares them case by case against an expected table.
 
-  python scripts/test-mode-detection.py
+  python tests/test-mode-detection.py
 
 Each .NET case needs its own process, because configuration is read at startup, so
 this takes about a minute. It is not part of verify-apps.py for that reason.

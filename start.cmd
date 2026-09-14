@@ -47,13 +47,13 @@ exit /b 0
 
 :verify
 dotnet build "%ROOT%\dotnet\AiGatewayDemo" --nologo -v q || exit /b 1
-start "AI Gateway - mock" /min python "%ROOT%\scripts\mock-azure-ai.py" 5290
+start "AI Gateway - mock" /min python "%ROOT%\tools\mock-azure-ai.py" 5290
 timeout /t 3 /nobreak >nul
 python "%ROOT%\scripts\verify-apps.py"
 exit /b %ERRORLEVEL%
 
 :mock
-python "%ROOT%\scripts\mock-azure-ai.py" 5290
+python "%ROOT%\tools\mock-azure-ai.py" 5290
 exit /b %ERRORLEVEL%
 
 :usage
