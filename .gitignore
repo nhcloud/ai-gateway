@@ -1,8 +1,12 @@
 # ── Secrets ──────────────────────────────────────────────────────────
-# 03-set-local-env.ps1 writes .env at the repo root with real keys. Never commit it.
-# The pattern is unanchored, so a stack-local dotnet/.env or python/.env is covered too.
+# 03-set-local-env.ps1 writes python/.env with real keys. Never commit it.
+# The pattern is unanchored, so a stack-local dotnet/.env is covered too.
 .env
 scripts/.deploy.json
+
+# 03-set-local-env.ps1 keeps the file it replaces as <name>.bak. Those copies hold
+# the previous run's keys, so they are every bit as sensitive as the originals.
+*.bak
 
 # The template is tracked - it is the documentation for every setting.
 !.env.example

@@ -24,7 +24,7 @@ $state = Get-DemoState
 if ($ResourceGroup) { $state.ResourceGroup = $ResourceGroup }
 
 Write-Step "About to delete resource group $($state.ResourceGroup)"
-Write-Host "  $($state.OpenAiName), $($state.ContentSafety), $($state.DocIntelName)$(if ($state.ApimName) { ", $($state.ApimName)" })"
+Write-Host "  $($state.FoundryName), $($state.ContentSafety), $($state.DocIntelName)$(if ($state.ApimName) { ", $($state.ApimName)" })"
 
 if (-not $PSCmdlet.ShouldProcess($state.ResourceGroup, 'Delete resource group and all resources in it')) {
     Write-Note 'Cancelled.'
@@ -34,7 +34,7 @@ if (-not $PSCmdlet.ShouldProcess($state.ResourceGroup, 'Delete resource group an
 # Soft-deleted Cognitive Services accounts keep their names reserved, so purge them
 # before the group goes away and their location is harder to look up.
 $accounts = @(
-    @{ Name = $state.OpenAiName }
+    @{ Name = $state.FoundryName }
     @{ Name = $state.ContentSafety }
     @{ Name = $state.DocIntelName }
 )

@@ -19,9 +19,11 @@ param([switch]$Check)
 . "$PSScriptRoot\00-common.ps1"
 
 $root = Get-RepoRoot
-$source = Join-Path $root 'python\static'
-$wwwroot = Join-Path $root 'dotnet\AiGatewayDemo\wwwroot'
-$razorPage = Join-Path $root 'dotnet\AiGatewayDemo\Pages\Index.cshtml'
+# Built segment by segment: a literal 'a' is not a separator anywhere but Windows,
+# so Join-Path would hand back "root/python\static" on macOS and Linux.
+$source = Join-Path $root 'python' | Join-Path -ChildPath 'static'
+$wwwroot = Join-Path $root 'dotnet' | Join-Path -ChildPath 'AiGatewayDemo' | Join-Path -ChildPath 'wwwroot'
+$razorPage = Join-Path $wwwroot '..' | Join-Path -ChildPath 'Pages' | Join-Path -ChildPath 'Index.cshtml'
 $razorHeader = @('@page', '@{ Layout = null; }')
 
 $drift = @()
@@ -65,7 +67,7 @@ elseif ($Check) {
     Write-Warn $issue
 }
 else {
-    $expected | Set-Content -Path $razorPage -Encoding utf8
+    Set-Utf8NoBom -Path $razorPage -Content (($expected -join "`r`n") + "`r`n")
     Write-Ok 'Index.cshtml regenerated'
 }
 

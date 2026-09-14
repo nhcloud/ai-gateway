@@ -1,0 +1,76 @@
+<!--
+  Operation-scope policy for POST /openai/v1/chat/completions.
+
+  Reasoning models - the o-series and gpt-5 family - reject `max_tokens` outright:
+
+    "Unsupported parameter: 'max_tokens' is not supported with this model.
+     Use 'max_completion_tokens' instead."
+
+  and accept only the default temperature of 1. Older models want the opposite.
+  Translating here means a client written against either shape keeps working when the
+  deployment behind the gateway changes, which is the argument for fronting the model
+  with APIM in the first place.
+
+  Scope matters. This is the one transform that must NOT sit at API scope: the API
+  policy also covers `Any GET` and `Any POST`, and reading a JSON body on a GET, or on
+  a multipart upload, throws. Operation scope confines it to the one call with a chat
+  body.
+
+  The rule matches the apps on purpose - python/services/modelparams.py
+  (REASONING_PREFIXES) and dotnet/AiGatewayDemo/Services/ModelParameters.cs. Change the
+  prefixes in one and change them in all three, or the gateway and the apps will
+  disagree about the same model.
+
+  CDATA is not decoration: the expression contains As<JObject>, and a bare '<' inside
+  policy XML is parsed as markup and fails to apply.
+-->
+<policies>
+	<inbound>
+		<!-- base first. It carries the API-scope policy: the provider key swap, CORS and
+         the token limit. An operation policy that omits <base /> silently turns all of
+         that off for this one operation - the usual way to get a 401 here while every
+         other operation keeps working. -->
+		<base />
+		<set-body><![CDATA[@{
+			var body = context.Request.Body.As<JObject>(preserveContent: true);
+			var model = (string)body["model"] ?? "";
+
+			var isReasoningModel = model.StartsWith("o1") || model.StartsWith("o3")
+				|| model.StartsWith("o4") || model.StartsWith("gpt-5");
+
+			if (isReasoningModel)
+			{
+				// Move the cap across rather than drop it, so the caller still gets the
+				// limit it asked for. An explicit max_completion_tokens always wins.
+				if (body["max_tokens"] != null)
+				{
+					if (body["max_completion_tokens"] == null)
+					{
+						body["max_completion_tokens"] = body["max_tokens"];
+					}
+					body.Remove("max_tokens");
+				}
+
+				// Only the default temperature is allowed, so remove any other value.
+				// Sending 1 explicitly is fine and is left alone.
+				var temperature = body["temperature"];
+				if (temperature != null && temperature.Type != JTokenType.Null
+					&& (double)temperature != 1d)
+				{
+					body.Remove("temperature");
+				}
+			}
+
+			return body.ToString();
+		}]]></set-body>
+	</inbound>
+	<backend>
+		<base />
+	</backend>
+	<outbound>
+		<base />
+	</outbound>
+	<on-error>
+		<base />
+	</on-error>
+</policies>

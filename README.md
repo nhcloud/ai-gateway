@@ -156,7 +156,8 @@ az login
 # policies and one subscription key.
 .\scripts\02-configure-apim.ps1
 
-# Writes .env at the repo root, which both stacks read. -Mode picks the endpoint.
+# Writes python\.env and dotnet\AiGatewayDemo\appsettings.Development.json,
+# keeping any previous copy as .bak. -Mode picks the endpoint.
 .\scripts\03-set-local-env.ps1 -Mode apim
 
 # Proves the gateway on its own, before an app touches it.
@@ -169,11 +170,24 @@ Tear down with `.\scripts\99-cleanup.ps1 -Purge`.
 
 ## Configuration
 
-One flat set of keys drives both stacks, from `.env` at the repo root — read by Python
-via `python-dotenv` and by .NET via the small reader in `Program.cs`. A stack-local
-`dotnet/.env` or `python/.env` overrides it for that stack only, which is how you point
-the two apps at different endpoints and compare them side by side. Environment variables
-and `dotnet user-secrets` still win over both. See `.env.example` for the full list.
+One flat set of keys drives both stacks. `03-set-local-env.ps1` generates both files
+from the same values, into the place each app actually reads:
+
+| Stack | File | Read by |
+|---|---|---|
+| Python | `python/.env` | `python-dotenv` |
+| .NET | `dotnet/AiGatewayDemo/appsettings.Development.json` | the configuration chain |
+
+They go in the stack folders rather than the repo root because a root file is silently
+shadowed: Python takes `python/.env` first, and .NET ranks `appsettings.Development.json`
+above every `.env`. A root `.env` is still read by both as a last resort, so a hand-made
+shared file works when no stack-local one exists — but it can never override one.
+Environment variables and `dotnet user-secrets` win over everything. Whatever wins, the
+page's Connection panel names it. See `.env.example` for the full list.
+
+Re-running the script replaces both files and keeps the previous copy as `<name>.bak`,
+so a hand-edited config survives. `.gitignore` covers the generated files and the
+backups — they hold real keys.
 
 Direct Azure OpenAI, a classic APIM instance and the AI Gateway tier each need an
 endpoint, a deployment and a key - nothing more, and nothing different. So there is

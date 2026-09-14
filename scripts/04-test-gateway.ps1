@@ -30,8 +30,11 @@ param(
 . "$PSScriptRoot\00-common.ps1"
 
 # ── config from .env (no Azure sign-in needed for this script) ─────────
-if (-not $EnvFile) { $EnvFile = Join-Path (Get-RepoRoot) '.env' }
-if (-not (Test-Path $EnvFile)) { throw "No .env at $EnvFile. Run 03-set-local-env.ps1 first." }
+if (-not $EnvFile) { $EnvFile = Get-EnvFilePath -Existing }
+if (-not $EnvFile -or -not (Test-Path -LiteralPath $EnvFile)) {
+    throw "No .env found. Looked for $(Get-EnvFilePath) and $(Join-Path (Get-RepoRoot) '.env'). Run 03-set-local-env.ps1 first."
+}
+Write-Note "Reading $EnvFile"
 
 $cfg = @{}
 foreach ($line in Get-Content $EnvFile) {
@@ -64,25 +67,59 @@ function Test-Case {
 }
 
 function Invoke-Gateway {
-    <#  Returns the raw response so status codes can be asserted, errors included.  #>
+    <#
+    .SYNOPSIS
+        Returns the response whatever the status code, errors included.
+
+    .DESCRIPTION
+        -SkipHttpErrorCheck only exists in PowerShell 7, and this script is most useful
+        on whatever host is to hand - including Windows PowerShell 5.1, where a 4xx or
+        5xx throws instead. Half the point here is asserting on 404 and 401, so unwrap
+        the exception and hand back the same shape either way.
+    #>
     param(
         [Parameter(Mandatory)][string]$Uri,
         [string]$Method = 'POST',
         [hashtable]$Headers = @{},
         [string]$Body
     )
+
     $params = @{
-        Uri                = $Uri
-        Method             = $Method
-        Headers            = $Headers
-        SkipHttpErrorCheck = $true
-        ErrorAction        = 'Stop'
+        Uri         = $Uri
+        Method      = $Method
+        Headers     = $Headers
+        ErrorAction = 'Stop'
+        # Windows PowerShell otherwise hands the body to the Internet Explorer parsing
+        # engine, which hangs or fails outright on a machine where IE was never set up.
+        # PowerShell 7 accepts the switch and ignores it.
+        UseBasicParsing = $true
     }
     if ($Body) {
         $params.Body = $Body
         $params.ContentType = 'application/json'
     }
-    Invoke-WebRequest @params
+    if ($PSVersionTable.PSVersion.Major -ge 6) { $params.SkipHttpErrorCheck = $true }
+
+    try {
+        return Invoke-WebRequest @params
+    }
+    catch [System.Net.WebException] {
+        # Windows PowerShell: the response is on the exception.
+        $response = $_.Exception.Response
+        if (-not $response) { throw }
+
+        $reader = [System.IO.StreamReader]::new($response.GetResponseStream())
+        try { $content = $reader.ReadToEnd() } finally { $reader.Dispose() }
+
+        $headers = @{}
+        foreach ($name in $response.Headers.AllKeys) { $headers[$name] = $response.Headers[$name] }
+
+        return [pscustomobject]@{
+            StatusCode = [int]$response.StatusCode
+            Content    = $content
+            Headers    = $headers
+        }
+    }
 }
 
 # ── chat completion ─────────────────────────────────────────
@@ -116,11 +153,20 @@ Write-Step "Chat completions  (derived mode: $mode)"
 Write-Note "$chatBase/chat/completions"
 
 Test-Case 'Model responds with 200' {
+    # The o-series and gpt-5 family reject max_tokens and every temperature but 1.
+    # The gateway policy translates this too, but this script also runs against a
+    # direct endpoint where no policy is in the way - so send the right shape here
+    # rather than depend on the gateway to repair it. Same prefixes as the apps:
+    # python/services/modelparams.py and dotnet/.../Services/ModelParameters.cs.
+    $isReasoningModel = $aiModel -match '^(o1|o3|o4|gpt-5)'
+
     $body = @{
         model    = $aiModel
         messages = @(@{ role = 'user'; content = 'Reply with the single word: ready' })
-        max_tokens = 16
-    } | ConvertTo-Json -Depth 5 -Compress
+    }
+    if ($isReasoningModel) { $body['max_completion_tokens'] = 16 }
+    else { $body['max_tokens'] = 16 }
+    $body = $body | ConvertTo-Json -Depth 5 -Compress
 
     $response = Invoke-Gateway -Uri "$chatBase/chat/completions" `
         -Headers @{ $aiHeader = $aiKey; 'x-correlation-id' = "smoke-$(Get-Random)" } -Body $body

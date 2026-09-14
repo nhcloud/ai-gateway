@@ -279,8 +279,10 @@ internal static class DotEnv
 {
     public static void Load(string contentRoot, ConfigurationManager configuration)
     {
-        // This stack's own .env first, then the shared one at the repo root - which
-        // is what scripts/03-set-local-env.ps1 writes. A dotnet/.env overrides the
+        // This stack's own .env first, then one at the repo root. Note that
+        // scripts/03-set-local-env.ps1 configures this app through
+        // appsettings.Development.json, which outranks every .env here.
+        // A dotnet/.env overrides the
         // shared file for this stack only, which is how you point the two apps at
         // different endpoints and compare them side by side.
         var candidates = new[]

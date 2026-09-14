@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-    Writes the .env file that both apps read, from the deployed resources.
+    Writes each stack's local configuration from the deployed resources.
 
 .DESCRIPTION
     There is one connection: AI_ENDPOINT plus AI_KEY. -Mode chooses which endpoint
     gets written there:
 
-      direct     the Azure OpenAI resource, with its provider key
+      direct     the Azure AI Foundry resource, with its provider key
       apim       the classic APIM instance, with a revocable subscription key
       aigateway  the AI Gateway tier, with its runtime access key
 
@@ -16,8 +16,22 @@
     Nothing records which one you chose: the apps work it out from the endpoint and
     display it, so the page can never claim a mode it is not actually using.
 
-    Secrets are written to disk. The repo's .gitignore excludes .env - keep it that
-    way, and prefer -UseUserSecrets for the .NET app on a shared machine.
+    Two files are written, one per stack, and an existing copy of either is renamed
+    to <name>.bak first:
+
+      python\.env
+      dotnet\AiGatewayDemo\appsettings.Development.json
+
+    They go in the stack folders rather than the repo root because that is where
+    each app actually looks. Python reads python\.env ahead of any root .env, and
+    the .NET chain ranks appsettings.Development.json above every .env. A root file
+    is therefore shadowed by whatever already sits in the stack folder - which made
+    re-running this script look like it had done nothing at all. Both files are
+    generated from one set of values, so they cannot drift apart.
+
+    Secrets are written to disk. .gitignore excludes both files and the .bak copies -
+    keep it that way, and prefer -UseUserSecrets on a shared machine, which stores
+    the values outside the repo and leaves appsettings.Development.json alone.
 
 .EXAMPLE
     .\03-set-local-env.ps1                    # through the gateway
@@ -28,6 +42,7 @@
 param(
     [ValidateSet('direct', 'apim', 'aigateway')]
     [string]$Mode = 'apim',
+    # Overrides where the .env goes; the default is python\.env.
     [string]$Path,
     [switch]$UseUserSecrets,
     # AI Gateway tier (public preview) - registered by hand at ai.gateway.azure.com,
@@ -42,8 +57,6 @@ param(
 Assert-AzureCli | Out-Null
 $state = Get-DemoState
 $root = Get-RepoRoot
-
-if (-not $Path) { $Path = Join-Path $root '.env' }
 
 Write-Step 'Reading keys'
 function Get-ResourceKey {
@@ -70,8 +83,8 @@ if ($Mode -eq 'aigateway' -and -not $AiGatewayEndpoint) {
 
 switch ($Mode) {
     'direct' {
-        $aiEndpoint = $state.OpenAiEndpoint
-        $aiKey = Get-ResourceKey -Name $state.OpenAiName
+        $aiEndpoint = $state.FoundryEndpoint
+        $aiKey = Get-ResourceKey -Name $state.FoundryName
         $aiModel = $state.ChatModel
         # Straight at the resources, with their own keys.
         $safetyEndpoint = $state.SafetyEndpoint
@@ -130,31 +143,119 @@ $lines = @(
     'MAX_UPLOAD_MB=20'
 )
 
-Write-Step "Writing $Path"
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
-$lines -join [Environment]::NewLine | Set-Content -Path $Path -Encoding utf8
-Write-Ok "$($lines.Count) lines written."
+function ConvertTo-SettingMap {
+    <#  Reads the block above back into key/value pairs. The .env file, the JSON and
+        user-secrets are all generated from this one map, so a setting added above
+        reaches every stack and the two files cannot drift apart.  #>
+    # AllowEmptyString: the composed block uses blank lines as spacers, and a
+    # Mandatory [string[]] rejects an empty element without it.
+    param([Parameter(Mandatory)][AllowEmptyString()][string[]]$Lines)
 
-# ── optional: .NET user-secrets ───────────────────────────────────────
-if ($UseUserSecrets) {
-    Write-Step 'Storing the same values in dotnet user-secrets'
-    $project = Join-Path $root 'dotnet\AiGatewayDemo'
-
-    $secrets = [ordered]@{}
-    foreach ($line in $lines) {
+    $map = [ordered]@{}
+    foreach ($line in $Lines) {
         if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
         $key, $value = $line -split '=', 2
-        if ($value) { $secrets[$key.Trim()] = $value.Trim() }
+        if ($value) { $map[$key.Trim()] = $value.Trim() }
     }
+    $map
+}
+
+function Backup-Existing {
+    <#  Renames a file to <name>.bak before it is replaced, so a hand-edited config is
+        never lost to a re-run. Any older .bak is overwritten - one step back, not a
+        history. These copies hold real keys; .gitignore covers *.bak for that reason.  #>
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    Move-Item -LiteralPath $Path -Destination "$Path.bak" -Force
+    Write-Note "Kept the previous file as $(Split-Path -Leaf $Path).bak"
+    $true
+}
+
+function Get-Kept {
+    <#  Returns an existing JSON property if it is there, otherwise the default.
+        StrictMode makes a missing property terminating, hence the explicit test.  #>
+    param($Object, [Parameter(Mandatory)][string]$Name, $Default)
+
+    if ($Object -and $Object.PSObject.Properties[$Name]) { return $Object.$Name }
+    $Default
+}
+
+$settings = ConvertTo-SettingMap -Lines $lines
+
+# ───────────────────────── the Python app: python\.env ─────────────────────────
+if (-not $Path) { $Path = Get-EnvFilePath }
+
+Write-Step "Writing $Path"
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
+Backup-Existing -Path $Path | Out-Null
+Set-Utf8NoBom -Path $Path -Content ($lines -join [Environment]::NewLine)
+Write-Ok "$($settings.Count) settings written."
+
+# Nothing writes a repo-root .env any more. Leaving one there would be a second,
+# stale copy of the keys that no app reads, because Python takes the stack-local
+# file first - so retire it rather than let it sit and mislead.
+$rootEnv = Join-Path $root '.env'
+if ((Test-Path -LiteralPath $rootEnv) -and
+    ((Resolve-Path -LiteralPath $rootEnv).Path -ne (Resolve-Path -LiteralPath $Path).Path)) {
+    Write-Step 'Retiring the repo-root .env'
+    Write-Note 'Each stack now has its own file; this one is shadowed by both.'
+    Backup-Existing -Path $rootEnv | Out-Null
+}
+
+# ───────────────────────── the Razor app ─────────────────────────
+$project = Join-Path $root 'dotnet' | Join-Path -ChildPath 'AiGatewayDemo'
+$appSettings = Join-Path $project 'appsettings.Development.json'
+
+if ($UseUserSecrets) {
+    Write-Step 'Storing the values in dotnet user-secrets'
+    Write-Note 'appsettings.Development.json is left alone - user-secrets outrank it.'
 
     & dotnet user-secrets init --project $project | Out-Null
-    $secrets | ConvertTo-Json -Depth 3 | & dotnet user-secrets set --project $project 2>&1 | Out-Null
-    Write-Ok "$($secrets.Count) secrets stored for the Razor app."
+    $settings | ConvertTo-Json -Depth 3 | & dotnet user-secrets set --project $project 2>&1 | Out-Null
+    Write-Ok "$($settings.Count) secrets stored for the Razor app."
+}
+else {
+    Write-Step "Writing $appSettings"
+
+    # Read before the backup renames it away. Local diagnostics are the developer's,
+    # not this script's: keep whatever logging is already configured and replace only
+    # the connection keys.
+    $existing = $null
+    if (Test-Path -LiteralPath $appSettings) {
+        try { $existing = Get-Content -LiteralPath $appSettings -Raw | ConvertFrom-Json }
+        catch { Write-Warn "Could not parse the existing file, so the defaults are used. $($_.Exception.Message)" }
+    }
+
+    $defaultLogging = [ordered]@{
+        LogLevel = [ordered]@{
+            'Default'                    = 'Information'
+            'Microsoft.AspNetCore'       = 'Information'
+            'Microsoft.Hosting.Lifetime' = 'Information'
+            'AiGatewayDemo'              = 'Debug'
+            'System.Net.Http.HttpClient' = 'Information'
+        }
+    }
+
+    $document = [ordered]@{
+        '_comment'       = "Generated by 03-set-local-env.ps1 on $(Get-Date -Format 'yyyy-MM-dd HH:mm') from resource group $($state.ResourceGroup). Re-running the script replaces this file and keeps the previous one as .bak. It holds real keys - git-ignored, never commit it."
+        '_precedence'    = 'Lowest to highest: appsettings.json -> appsettings.Development.json -> user-secrets -> environment variables. A .env only fills keys still empty after all of those, which is why this file - not a repo-root .env - is what the Razor app actually reads. Whatever wins, the page Connection panel names it.'
+        '_logging'       = 'System.Net.Http.HttpClient at Information logs every outbound call the app makes, which is worth having during the demo. Every key under Logging:LogLevel must be a real log level - a comment key there fails startup, so these notes stay at the top level.'
+        'DetailedErrors' = Get-Kept -Object $existing -Name 'DetailedErrors' -Default $true
+        'Logging'        = Get-Kept -Object $existing -Name 'Logging' -Default $defaultLogging
+    }
+    foreach ($key in $settings.Keys) { $document[$key] = $settings[$key] }
+
+    Backup-Existing -Path $appSettings | Out-Null
+    Set-Utf8NoBom -Path $appSettings -Content ($document | ConvertTo-Json -Depth 6)
+    Write-Ok "$($settings.Count) settings written; logging configuration preserved."
 }
 
 Write-Step 'Done'
 Write-Host "  Wrote the $Mode endpoint. The apps derive and display that themselves."
 Write-Host "  Endpoint  $aiEndpoint"
 Write-Host "  Model     $aiModel"
+Write-Host "  Python    $Path"
+Write-Host "  .NET      $(if ($UseUserSecrets) { 'dotnet user-secrets' } else { $appSettings })"
 Write-Host ''
-Write-Host '  Next: .\04-test-gateway.ps1   then   .\05-run-dotnet.ps1  or  .\06-run-python.ps1' -ForegroundColor Cyan
+Write-Host '  Next: .\04-test-gateway.ps1   then   dotnet\start.cmd  or  python\start.cmd' -ForegroundColor Cyan

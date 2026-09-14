@@ -167,6 +167,7 @@ same message to each.
 | 404 on chat | Operation not defined, or the suffix is wrong in `AI_ENDPOINT` |
 | Backend path doubled | The path segment is in both the operation template and the backend URL — pick one |
 | Upload rejects a PDF | `DOC_INTEL_ENDPOINT` / `DOC_INTEL_KEY` unset for that mode |
+| Model deploy skipped with a warning | That model is not offered in the region — the Foundry resource is created, but `AI_CHAT_MODEL` will point at a deployment that does not exist |
 | Guardrail says *not checked* | Content Safety not configured — it is failing honest, not failing open |
 | A clearly bad prompt scores 0 | The four categories are Hate/SelfHarm/Sexual/Violence only; use `CONTENT_SAFETY_BLOCKLISTS` |
 | Inspector looks stale | It shows one turn: check the **Turn N** header and the echoed prompt |

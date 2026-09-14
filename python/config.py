@@ -31,12 +31,12 @@ _ENV_BEFORE_DOTENV = set(os.environ)
 
 
 def _load_env_file() -> str:
-    """Finds the .env: this stack's own first, then the shared one at the repo root.
+    """Finds the .env: this stack's own first, then one at the repo root.
 
-    The root file is what scripts/03-set-local-env.ps1 writes, so both stacks read
-    the same configuration by default. A python/.env overrides it for this stack
-    only - which is how you point the two apps at different endpoints and compare
-    them side by side.
+    python/.env is what scripts/03-set-local-env.ps1 writes, so re-running that
+    script with a different -Mode repoints this app. The repo-root fallback remains
+    for a hand-made shared file, but it is reached only when python/.env is absent -
+    a root file never overrides a stack-local one.
     """
     here = Path(__file__).resolve().parent
     for candidate in (here / ".env", here.parent / ".env"):

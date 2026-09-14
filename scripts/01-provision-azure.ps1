@@ -1,16 +1,21 @@
 <#
 .SYNOPSIS
-    Provisions the Azure resources the demo fronts: Azure OpenAI (with two model
-    deployments), Content Safety, Document Intelligence, and an APIM instance.
+    Provisions the Azure resources the demo fronts: an Azure AI Foundry resource
+    (with two model deployments), Content Safety, Document Intelligence, and APIM.
 
 .DESCRIPTION
     Safe to re-run: every step checks for an existing resource first.
+
+    Models are deployed into an Azure AI Foundry resource - `--kind AIServices` -
+    rather than a standalone Azure OpenAI account. Foundry is the current shape for
+    this: one resource, many model providers, and the same /openai/v1 surface the app
+    already speaks. Deployment works identically either way.
 
     APIM on the Developer SKU takes 30-45 minutes to come up. The script kicks it off
     with --no-wait and moves on; 02-configure-apim.ps1 waits for it. Start this early.
 
 .PARAMETER Prefix
-    Short, globally distinctive name stem. Becomes <prefix>-aoai, <prefix>-apim, etc.
+    Short, globally distinctive name stem. Becomes <prefix>-foundry, <prefix>-apim, etc.
 
 .PARAMETER SkipApim
     Provision only the AI services - useful if you already have an APIM instance, or
@@ -21,12 +26,12 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$Prefix,
-    [string]$Location = 'eastus',
-    [string]$ResourceGroup,
     [Parameter(Mandatory)][string]$PublisherEmail,
+    [Parameter(Mandatory)][string]$Prefix,
+    [Parameter(Mandatory)][string]$ResourceGroup,
+    [string]$Location = 'eastus2',
     [string]$PublisherName = 'AI Gateway Demo',
-    [string]$ChatModel = 'gpt-4o',
+    [string]$ChatModel = 'gpt-5.6-terra',
     [string]$EmbeddingModel = 'text-embedding-3-small',
     [int]$ChatCapacity = 30,
     [int]$EmbeddingCapacity = 30,
@@ -41,11 +46,63 @@ $account = Assert-AzureCli
 $names = New-DemoNames -Prefix $Prefix -Location $Location -ResourceGroup $ResourceGroup
 
 # ── resource group ────────────────────────────────────────────────────
+# `az group create` looks idempotent but is not: on a group that already exists in
+# another region it fails, because a resource group's location cannot be changed.
+# So look first, and take an existing group as it is.
 Write-Step "Resource group $($names.ResourceGroup)"
-Invoke-Az @('group', 'create', '--name', $names.ResourceGroup, '--location', $Location) | Out-Null
-Write-Ok "Ready."
+$group = Invoke-Az @('group', 'show', '--name', $names.ResourceGroup) -AllowFailure
+
+if ($group) {
+    Write-Ok "Already exists in $($group.location) - using it, nothing to create."
+
+    if ($group.location -ne $Location) {
+        if ($PSBoundParameters.ContainsKey('Location')) {
+            # An explicit -Location wins: Azure is happy to put resources in a region
+            # other than their group's, so this is a choice, not a mistake.
+            Write-Warn "Group is in $($group.location) but -Location says $Location."
+            Write-Warn "The new resources will go to $Location."
+        }
+        else {
+            # No -Location was asked for, so follow the group rather than the default.
+            $Location = $group.location
+            $names.Location = $Location
+            Write-Note "No -Location given; using $Location to match the group."
+        }
+    }
+}
+else {
+    Invoke-Az @('group', 'create', '--name', $names.ResourceGroup, '--location', $Location) | Out-Null
+    Write-Ok "Created in $Location."
+}
 
 # ── cognitive services accounts ───────────────────────────────────────
+# Set-StrictMode -Version Latest turns a missing property into a terminating error,
+# not $null, so reach for nested properties defensively.
+function Get-CognitiveEndpoint {
+    param($Account, [switch]$PreferOpenAi)
+
+    if (-not $Account) { return '' }
+    $properties = $Account.PSObject.Properties['properties']
+    if (-not $properties -or -not $properties.Value) { return '' }
+    $props = $properties.Value
+
+    if ($PreferOpenAi) {
+        # A Foundry resource advertises several endpoints; the app wants the one that
+        # serves /openai/v1. Fall through to the general endpoint if it is not listed.
+        $map = $props.PSObject.Properties['endpoints']
+        if ($map -and $map.Value) {
+            $openAi = $map.Value.PSObject.Properties |
+                Where-Object { $_.Name -match 'OpenAI' -and $_.Value } |
+                Select-Object -First 1
+            if ($openAi) { return [string]$openAi.Value }
+        }
+    }
+
+    $endpoint = $props.PSObject.Properties['endpoint']
+    if (-not $endpoint) { return '' }
+    return [string]$endpoint.Value
+}
+
 function New-CognitiveAccount {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -61,19 +118,23 @@ function New-CognitiveAccount {
         return $existing
     }
 
-    Invoke-Az @('cognitiveservices', 'account', 'create',
+    $created = Invoke-Az @('cognitiveservices', 'account', 'create',
         '--name', $Name, '-g', $names.ResourceGroup, '--location', $Location,
         '--kind', $Kind, '--sku', $Sku,
         # A custom subdomain is required for Azure OpenAI and harmless elsewhere.
         '--custom-domain', $Name,
-        '--yes') | Out-Null
+        '--yes')
 
     Write-Ok "$Name created ($Kind)."
+
+    # `create` already returns the account, so there is usually nothing to ask for.
+    # Only re-read when the endpoint has not caught up yet.
+    if (Get-CognitiveEndpoint $created) { return $created }
     Invoke-Az @('cognitiveservices', 'account', 'show', '--name', $Name, '-g', $names.ResourceGroup)
 }
 
-Write-Step "Azure OpenAI: $($names.OpenAiName)"
-$openai = New-CognitiveAccount -Name $names.OpenAiName -Kind 'OpenAI'
+Write-Step "Azure AI Foundry: $($names.FoundryName)"
+$foundry = New-CognitiveAccount -Name $names.FoundryName -Kind 'AIServices'
 
 Write-Step "Content Safety: $($names.ContentSafety)"
 $safety = New-CognitiveAccount -Name $names.ContentSafety -Kind 'ContentSafety'
@@ -90,7 +151,7 @@ function New-ModelDeployment {
     )
 
     $existing = Invoke-Az @('cognitiveservices', 'account', 'deployment', 'show',
-        '--name', $names.OpenAiName, '-g', $names.ResourceGroup,
+        '--name', $names.FoundryName, '-g', $names.ResourceGroup,
         '--deployment-name', $DeploymentName) -AllowFailure
 
     if ($existing) {
@@ -114,7 +175,7 @@ function New-ModelDeployment {
     if (-not $skuName) { $skuName = 'Standard' }
 
     Invoke-Az @('cognitiveservices', 'account', 'deployment', 'create',
-        '--name', $names.OpenAiName, '-g', $names.ResourceGroup,
+        '--name', $names.FoundryName, '-g', $names.ResourceGroup,
         '--deployment-name', $DeploymentName,
         '--model-name', $ModelName, '--model-version', $version, '--model-format', 'OpenAI',
         '--sku-name', $skuName, '--sku-capacity', $Capacity) | Out-Null
@@ -151,17 +212,28 @@ else {
 }
 
 # ── state ─────────────────────────────────────────────────────────────
+$endpoints = @{
+    $names.FoundryName   = Get-CognitiveEndpoint $foundry -PreferOpenAi
+    $names.ContentSafety = Get-CognitiveEndpoint $safety
+    $names.DocIntelName  = Get-CognitiveEndpoint $docintel
+}
+foreach ($entry in $endpoints.GetEnumerator()) {
+    if (-not $entry.Value) {
+        throw "No endpoint came back for $($entry.Key). Check it in the portal, then re-run."
+    }
+}
+
 $state = [pscustomobject]@{
     SubscriptionId   = $account.id
     Prefix           = $names.Prefix
     Location         = $Location
     ResourceGroup    = $names.ResourceGroup
-    OpenAiName       = $names.OpenAiName
-    OpenAiEndpoint   = $openai.properties.endpoint.TrimEnd('/')
+    FoundryName      = $names.FoundryName
+    FoundryEndpoint  = $endpoints[$names.FoundryName].TrimEnd('/')
     ContentSafety    = $names.ContentSafety
-    SafetyEndpoint   = $safety.properties.endpoint.TrimEnd('/')
+    SafetyEndpoint   = $endpoints[$names.ContentSafety].TrimEnd('/')
     DocIntelName     = $names.DocIntelName
-    DocIntelEndpoint = $docintel.properties.endpoint.TrimEnd('/')
+    DocIntelEndpoint = $endpoints[$names.DocIntelName].TrimEnd('/')
     ApimName         = if ($SkipApim) { '' } else { $names.ApimName }
     AoaiApiPath      = $names.AoaiApiPath
     SafetyApiPath    = $names.SafetyApiPath
@@ -175,9 +247,12 @@ $state = [pscustomobject]@{
 Save-DemoState -State $state
 
 Write-Step 'Done'
-Write-Host "  Azure OpenAI         $($state.OpenAiEndpoint)"
+Write-Host "  Azure AI Foundry     $($state.FoundryEndpoint)"
 Write-Host "  Content Safety       $($state.SafetyEndpoint)"
 Write-Host "  Document Intelligence $($state.DocIntelEndpoint)"
-if (-not $SkipApim) { Write-Host "  APIM                 $($state.ApimName) (provisioning)" }
+if (-not $SkipApim) {
+    $apimNote = if ($apimCreated) { 'provisioning, 30-45 min' } else { 'already provisioned' }
+    Write-Host "  APIM                 $($state.ApimName) ($apimNote)"
+}
 Write-Host ''
 Write-Host "  Next: .\02-configure-apim.ps1" -ForegroundColor Cyan

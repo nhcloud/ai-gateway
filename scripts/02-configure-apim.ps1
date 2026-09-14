@@ -8,7 +8,8 @@
 
       named values   aoai-key, contentsafety-key, docintel-key (secret), docintel-host
       backend        content-safety-backend  (only used by the llm-content-safety policy)
-      API  aoai          -> Azure OpenAI,  operations for chat/completions and embeddings
+      API  aoai          -> Azure AI Foundry, operations for chat/completions and embeddings
+      op policy      chat-completions, translating max_tokens/temperature per model
       API  contentsafety -> Content Safety, wildcard
       API  docintel      -> Document Intelligence, wildcard + Operation-Location rewrite
       subscription   one key, scoped to all APIs - the only secret the app ever holds
@@ -53,7 +54,33 @@ $base = "https://management.azure.com/subscriptions/$($state.SubscriptionId)" +
         "/resourceGroups/$($state.ResourceGroup)/providers/Microsoft.ApiManagement/service/$($state.ApimName)"
 
 function Invoke-ArmPut {
-    <#  PUTs a JSON body to an ARM path relative to the APIM service.  #>
+    <#
+    .SYNOPSIS
+        PUTs a JSON body to an ARM path relative to the APIM service.
+
+    .DESCRIPTION
+        Two encodings matter here, in opposite directions.
+
+        Going out, the body file must be UTF-8 with NO byte-order mark: the CLI reads
+        it as plain UTF-8 and a BOM fails it with
+            Unexpected UTF-8 BOM (decode using utf-8-sig)
+        Windows PowerShell writes a BOM for -Encoding utf8, so Set-Utf8NoBom states the
+        bytes explicitly rather than leaving it to the host.
+
+        Coming back, APIM answers the policy endpoint with a document that starts with
+        a BOM. The CLI cannot parse that as JSON, falls back to printing the raw text,
+        and dies encoding it - the traceback ends in cp1252.py and reads like an Azure
+        failure. `--output-file` is the CLI's own remedy for exactly this, named in the
+        warning it prints just before the crash; it takes the branch that returns the
+        body instead of the one that prints it. No response here is ever used, so the
+        file is written and dropped.
+
+        Do NOT try to fix this with $env:PYTHONIOENCODING. az.cmd runs
+            python.exe -IBm azure.cli
+        and -I is isolated mode, which implies -E: every PYTHON* variable is discarded
+        before the CLI starts. Setting it looks right, changes nothing, and sends the
+        next person hunting through PowerShell versions for a fault that is not there.
+    #>
     param(
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)][hashtable]$Body,
@@ -61,16 +88,37 @@ function Invoke-ArmPut {
     )
 
     $file = New-TemporaryFile
+    $responseFile = New-TemporaryFile
     try {
-        $Body | ConvertTo-Json -Depth 12 | Set-Content -Path $file -Encoding utf8
+        Set-Utf8NoBom -Path $file.FullName -Content ($Body | ConvertTo-Json -Depth 12)
+
         Invoke-Az @('rest', '--method', 'put',
             '--url', "$base$Path`?api-version=$Version",
             '--headers', 'Content-Type=application/json',
-            '--body', "@$file") | Out-Null
+            '--body', "@$($file.FullName)",
+            '--output-file', $responseFile.FullName) | Out-Null
     }
     finally {
-        Remove-Item $file -ErrorAction SilentlyContinue
+        Remove-Item $file, $responseFile -ErrorAction SilentlyContinue
     }
+}
+
+function Invoke-ArmPost {
+    <#
+    .SYNOPSIS
+        POSTs to an ARM path and returns the parsed response.
+
+    .DESCRIPTION
+        Kept separate from Invoke-ArmPut only because this one's response is wanted.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$Version = $ApiVersion
+    )
+
+    Invoke-Az @('rest', '--method', 'post',
+        '--url', "$base$Path`?api-version=$Version",
+        '--headers', 'Accept=application/json')
 }
 
 # ── wait for APIM ─────────────────────────────────────────────────────
@@ -98,7 +146,7 @@ function Get-ResourceKey {
         '--name', $Name, '-g', $state.ResourceGroup)).key1
 }
 
-$aoaiKey = Get-ResourceKey -Name $state.OpenAiName
+$aoaiKey = Get-ResourceKey -Name $state.FoundryName
 $safetyKey = Get-ResourceKey -Name $state.ContentSafety
 $docIntelKey = Get-ResourceKey -Name $state.DocIntelName
 Write-Ok 'Collected. These stay inside the gateway from here on.'
@@ -193,7 +241,8 @@ function Set-ApiPolicy {
         [Parameter(Mandatory)][string]$ApiId,
         [Parameter(Mandatory)][string]$PolicyFile
     )
-    $xml = Get-Content -Path (Join-Path $PSScriptRoot "policies\$PolicyFile") -Raw
+    $policyPath = Join-Path $PSScriptRoot 'policies' | Join-Path -ChildPath $PolicyFile
+    $xml = Get-Content -Path $policyPath -Raw
     $xml = $xml -replace 'tokens-per-minute="10000"', "tokens-per-minute=`"$TokensPerMinute`""
 
     Invoke-ArmPut -Path "/apis/$ApiId/policies/policy" -Body @{
@@ -202,9 +251,34 @@ function Set-ApiPolicy {
     Write-Ok "Policy applied: $PolicyFile"
 }
 
-Write-Step 'API: Azure OpenAI'
-Set-Api -ApiId 'aoai' -DisplayName 'Azure OpenAI' -Path $state.AoaiApiPath `
-    -ServiceUrl $state.OpenAiEndpoint `
+function Set-OperationPolicy {
+    <#
+    .SYNOPSIS
+        Applies a policy to a single operation rather than the whole API.
+
+    .DESCRIPTION
+        Use this only where a transform must not reach the other operations - the body
+        rewrite on chat/completions would throw on a GET, which the API's wildcard
+        operations accept. Everything shared belongs at API scope, where one copy
+        covers every operation.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ApiId,
+        [Parameter(Mandatory)][string]$OperationId,
+        [Parameter(Mandatory)][string]$PolicyFile
+    )
+    $policyPath = Join-Path $PSScriptRoot 'policies' | Join-Path -ChildPath $PolicyFile
+    $xml = Get-Content -Path $policyPath -Raw
+
+    Invoke-ArmPut -Path "/apis/$ApiId/operations/$OperationId/policies/policy" -Body @{
+        properties = @{ format = 'rawxml'; value = $xml }
+    }
+    Write-Ok "Operation policy applied: $PolicyFile  ->  $OperationId"
+}
+
+Write-Step 'API: Azure AI Foundry'
+Set-Api -ApiId 'aoai' -DisplayName 'Azure AI Foundry' -Path $state.AoaiApiPath `
+    -ServiceUrl $state.FoundryEndpoint `
     -Description 'Chat completions and embeddings, fronted by the gateway.'
 
 # APIM routes only to defined operations - an undefined path 404s at the gateway
@@ -221,6 +295,13 @@ Set-Operation -ApiId 'aoai' -OperationId 'catch-all-get' -DisplayName 'Any GET' 
 
 Set-ApiPolicy -ApiId 'aoai' -PolicyFile $(
     if ($EnableContentSafetyPolicy) { 'aoai-api-content-safety.xml' } else { 'aoai-api.xml' })
+
+# Reasoning models (o-series, gpt-5) reject max_tokens and any temperature but 1.
+# Translating at the gateway means the client body does not have to change with the
+# deployment behind it. Operation scope, because reading a JSON body on the wildcard
+# GET would throw.
+Set-OperationPolicy -ApiId 'aoai' -OperationId 'chat-completions' `
+    -PolicyFile 'aoai-chat-completions.xml'
 
 Write-Step 'API: Content Safety'
 Set-Api -ApiId 'contentsafety' -DisplayName 'Content Safety' -Path $state.SafetyApiPath `
@@ -255,9 +336,17 @@ Invoke-ArmPut -Path "/subscriptions/$subscriptionId" -Body @{
     }
 }
 
-$secrets = Invoke-Az @('rest', '--method', 'post',
-    '--url', "$base/subscriptions/$subscriptionId/listSecrets?api-version=$ApiVersion")
-$subscriptionKey = $secrets.primaryKey
+$secrets = Invoke-ArmPost -Path "/subscriptions/$subscriptionId/listSecrets"
+
+# StrictMode turns a missing property into a terminating error, so ask before reaching.
+$subscriptionKey = if ($secrets -and $secrets.PSObject.Properties['primaryKey']) {
+    [string]$secrets.primaryKey
+} else { '' }
+
+if (-not $subscriptionKey) {
+    throw "listSecrets returned no primaryKey for subscription '$subscriptionId'. " +
+          "Check it in the portal under APIM > Subscriptions, then re-run."
+}
 Write-Ok "Issued."
 
 # ── state ─────────────────────────────────────────────────────────────
