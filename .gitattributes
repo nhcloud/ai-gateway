@@ -1,0 +1,20 @@
+# Line endings are correctness here, not style.
+#
+# cmd.exe mis-parses a batch file that has LF-only line endings. Labels and %~ parameter
+# expansion break, and the errors name nothing useful:
+#   'the' is not recognized as an internal or external command
+#   The following usage of the path operator in batch-parameter substitution is invalid: %~fI
+# So .cmd must arrive as CRLF on every machine, whatever a contributor's core.autocrlf
+# happens to be set to - including a checkout made on macOS and shared with Windows.
+#
+# Shell scripts need the opposite. A trailing CR on the shebang makes the kernel look for
+# an interpreter literally named "bash\r", which fails with "no such file or directory"
+# while pointing at a file that plainly exists.
+#
+# .ps1 is deliberately absent: PowerShell reads either ending on both hosts, so pinning
+# it would only churn every script in the repo.
+
+* text=auto
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.sh  text eol=lf
