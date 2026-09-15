@@ -3,11 +3,11 @@
 # Convenience dispatcher. Each stack is self-contained and can be run on
 # its own - this just saves you a cd:
 #
-#   ./start.sh                 -> dotnet/start.sh    http://localhost:5080
-#   ./start.sh python          -> python/start.sh    http://localhost:8080
-#   ./start.sh both            both at once, side by side
-#   ./start.sh verify          run both against the mock and compare them
-#   ./start.sh mock            the offline mock only
+#   ./start_all.sh                 both stacks at once, side by side
+#   ./start_all.sh dotnet          -> dotnet/start.sh    http://localhost:5080
+#   ./start_all.sh python          -> python/start.sh    http://localhost:8080
+#   ./start_all.sh verify          run both against the mock and compare them
+#   ./start_all.sh mock            the offline mock only
 #
 # Any other flags (--port, --mock, --no-browser, ...) are passed straight
 # through to the stack's own launcher.
@@ -15,8 +15,13 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET="${1:-dotnet}"
-[ $# -gt 0 ] && shift
+# With no argument - or with a leading flag, which means no target was named - run
+# both stacks. That is the demo: one page and one JSON contract, two back ends.
+TARGET="${1:-both}"
+case "$TARGET" in
+  -*) TARGET=both ;;
+  *)  [ $# -gt 0 ] && shift ;;
+esac
 
 case "$TARGET" in
   dotnet|net|razor)  exec "$ROOT/dotnet/start.sh" "$@" ;;
@@ -24,7 +29,7 @@ case "$TARGET" in
 
   both)
     # Different ports by design, so both run at once and can be compared.
-    "$ROOT/dotnet/start.sh" --no-browser "$@" &
+    "$ROOT/dotnet/start.sh" "$@" &
     dotnet_pid=$!
     "$ROOT/python/start.sh" --no-browser "$@" &
     python_pid=$!

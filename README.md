@@ -52,7 +52,7 @@ launcher and its own port - nothing is shared at runtime.
 
 ```
 .env.example              Shared configuration template (copy to .env at the root)
-start.cmd  start.sh       Dispatcher - saves a cd, nothing more
+start_all.cmd  start_all.sh   Runs both stacks at once; name a target to run one
 
 dotnet/
   start.cmd  start.sh     Runs the .NET stack        http://localhost:5080
@@ -100,34 +100,37 @@ to the offline mock automatically, so the demo works before any Azure resource e
 **Windows**
 
 ```bat
-cd dotnet  &  .\start.cmd          :: .NET stack      http://localhost:5080
-cd python  &  .\start.cmd          :: Python stack    http://localhost:8080
+.\start_all.cmd                    :: both stacks at once, on their own ports
+.\start_all.cmd dotnet             :: .NET only       http://localhost:5080
+.\start_all.cmd python             :: Python only     http://localhost:8080
+.\start_all.cmd verify             :: run the test suite against the mock
 
-.\start.cmd                        :: or from the root: same as dotnet
-.\start.cmd python                 ::                   same as python
-.\start.cmd both                   :: both at once, on their own ports
-.\start.cmd verify                 :: run the test suite against the mock
+cd dotnet  &  .\start.cmd          :: or run a stack directly
+cd python  &  .\start.cmd
 ```
 
-> Call it as `.\start.cmd`. A bare `start` runs cmd's built-in START command — internal
-> commands win over files of the same name. Double-clicking it in Explorer is fine.
+> Call it as `.\start_all.cmd`. PowerShell never searches the current directory, and
+> neither does cmd where `NoDefaultCurrentDirectoryInExePath` is set. The name is
+> `start_all` rather than `start` for a second reason: `start` is a cmd built-in and
+> internal commands beat files of the same name, so a file named `start.cmd` is easy to
+> invoke by accident as START. Double-clicking any of them in Explorer is fine.
 
 **macOS / Linux / WSL**
 
 ```bash
-chmod +x start.sh dotnet/start.sh python/start.sh   # once
+chmod +x start_all.sh dotnet/start.sh python/start.sh   # once
 
-cd dotnet && ./start.sh     # .NET stack      http://localhost:5080
-cd python && ./start.sh     # Python stack    http://localhost:8080
+./start_all.sh              # both stacks at once, on their own ports
+./start_all.sh dotnet       # .NET only       http://localhost:5080
+./start_all.sh python       # Python only     http://localhost:8080
+./start_all.sh verify       # run the test suite against the mock
 
-./start.sh                  # or from the root: same as dotnet
-./start.sh python           #                   same as python
-./start.sh both             # both at once, on their own ports
-./start.sh verify           # run the test suite against the mock
+cd dotnet && ./start.sh     # or run a stack directly
+cd python && ./start.sh
 ```
 
 Every launcher accepts `--mock`, `--port N` and `--no-browser`; the Python one also
-takes `--reload`. The root `start.cmd` / `start.sh` only forward to the stack launchers,
+takes `--reload`. The root `start_all.cmd` / `start_all.sh` only forward to the stack launchers,
 so there is nothing in them you would miss by running a stack directly. The `.sh` files
 are written for the bash 3.2 that macOS ships.
 
